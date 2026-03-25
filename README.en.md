@@ -2,74 +2,99 @@
 
 [中文](./README.md) | [English](./README.en.md)
 
-## Quick Start Summary
+One-line summary: this package checks your DNSHE domains once a week and renews them automatically after they enter the renewal window.
 
-You only need two steps:
+## 3-Minute Setup
 
-1. Create a new private GitHub repository and copy the contents of this repository into it
-2. Add the required `Secrets` and `Variables` in your GitHub repository
+### Step 0: create your DNSHE API credentials first
 
-Before doing that, you must first enable and create your `DNSHE API` credentials in the DNSHE dashboard.
-
-DNSHE dashboard:
+Go here first:
 
 - https://my.dnshe.com
 
-This repository provides a GitHub Actions based auto-renewal workflow for DNSHE free domains. The workflow runs weekly and only renews a domain after it enters its renewal window.
+Prepare these two values:
 
-## Features
+- `DNSHE_API_KEY`
+- `DNSHE_API_SECRET`
 
-- Managed domains are not hard-coded in the repository
-- The domain list is read from the repository variable `DNSHE_DOMAINS`
-- `DNSHE_DOMAINS` uses one domain per line, so adding or removing domains only requires editing one repository variable
-- When a domain is discovered for the first time, the script derives its initial expiration time from the DNSHE API field `created_at` using `created_at + 365 days`
-- After a successful renewal, the script stores the returned `new_expires_at` in `state/domains-state.json`
-- Future runs continue from the latest known expiration automatically
+### Step 1: copy this directory into your own private GitHub repository
 
-## Repository Settings
+Create a new private GitHub repository and copy this directory into it.
 
-Add the following settings in your GitHub repository:
+Why private is recommended:
 
-- Secret: `DNSHE_API_KEY`
-- Secret: `DNSHE_API_SECRET`
-- Variable: `DNSHE_DOMAINS`
+- `DNSHE_DOMAINS` shows which domains you manage
+- `state/domains-state.json` stores known expiration times
+- those are operational details and are better kept private
 
-`DNSHE_DOMAINS` should be plain text with one domain per line:
+### Step 2: add 2 secrets and 1 variable in GitHub
 
-```text
-abc88.cc.cd
-12366.cc.cd
-```
+Go to:
 
-Usage:
+- `Settings -> Secrets and variables -> Actions`
 
-- Add a domain: append one line to `DNSHE_DOMAINS`
-- Remove a domain: delete one line from `DNSHE_DOMAINS`
+Add these secrets:
 
-## Renewal Rule
+- `DNSHE_API_KEY`
+- `DNSHE_API_SECRET`
 
-Each domain is processed with the following logic:
+Add this variable:
 
-1. Read the domain from `DNSHE_DOMAINS`
-2. Query DNSHE through `subdomains/list`
-3. If the domain is new, derive the initial expiration time as `created_at + 365 days`
-4. Compute the renewal trigger time as `renew_at = expires_at - renew_before_days`
-5. Skip the domain if current time is earlier than `renew_at`
-6. Renew the domain if current time is at or after `renew_at`
-7. Update the state file with `new_expires_at` after a successful renewal
+- `DNSHE_DOMAINS`
 
-The default lead time before renewal is `175 days`.
+### Step 3: write your domains into `DNSHE_DOMAINS`
 
-## Example: Add a New Domain Later
-
-Assume you currently manage these two domains:
+Use one domain per line:
 
 ```text
 abc88.cc.cd
 12366.cc.cd
 ```
 
-Thirty days later, you register a new domain:
+### Step 4: run the workflow once manually
+
+Open:
+
+- `Actions`
+
+Run `DNSHE Auto Renew` once and confirm:
+
+- the domains are read correctly
+- `state/domains-state.json` is created correctly
+
+## You only need to fill in 3 things
+
+1. `DNSHE_API_KEY`
+2. `DNSHE_API_SECRET`
+3. `DNSHE_DOMAINS`
+
+Everything else can usually stay unchanged.
+
+## How to write `DNSHE_DOMAINS`
+
+Just use one domain per line:
+
+```text
+abc88.cc.cd
+12366.cc.cd
+444.cc.cd
+```
+
+Later:
+
+- add a domain: add one line
+- remove a domain: delete one line
+
+## What happens when you add a new domain later
+
+Assume you currently have:
+
+```text
+abc88.cc.cd
+12366.cc.cd
+```
+
+Thirty days later, you add:
 
 ```text
 444.cc.cd
@@ -83,60 +108,38 @@ abc88.cc.cd
 444.cc.cd
 ```
 
-On the next scheduled run, the workflow will:
+On the next workflow run, it will automatically:
 
-1. Call DNSHE `subdomains/list`
-2. Detect that `444.cc.cd` is not yet present in `state/domains-state.json`
-3. Read its `created_at`
-4. Compute the initial expiration as `created_at + 365 days`
-5. Save that value into `state/domains-state.json`
-6. Use `expires_at - 175 days` for future renewal-window checks
+1. detect that `444.cc.cd` is new
+2. read its `created_at` from the DNSHE API
+3. calculate the first expiration as `created_at + 365 days`
+4. save the result into `state/domains-state.json`
 
-This means you do not need to manually enter either the registration time or the expiration time for newly added domains.
+So you do not need to manually fill in either the registration time or the expiration time.
 
-## Files
+## Why you do not need to enter expiration dates manually
 
-- `scripts/dnshe_auto_renew.py`: main renewal script
-- `.github/workflows/dnshe-auto-renew.yml`: GitHub Actions workflow
-- `state/domains-state.json`: generated or updated state file storing the latest known expiration time per domain
+This workflow calculates them automatically:
 
-## Deployment Steps
+- first time seen: `created_at + 365 days`
+- after a successful renewal: use the API field `new_expires_at`
 
-1. Create a new private GitHub repository
-2. Upload the contents of this folder to the repository root
-3. In `Settings -> Secrets and variables -> Actions`, add:
-   - Secret `DNSHE_API_KEY`
-   - Secret `DNSHE_API_SECRET`
-   - Variable `DNSHE_DOMAINS`
-4. Open the `Actions` tab
-5. Manually run `DNSHE Auto Renew` once to confirm the workflow can read the domains and create the state file
+That means the next renewal window keeps updating automatically.
 
-Notes:
+## When renewal happens
 
-- GitHub currently does not allow you to change the visibility of a fork
-- If the upstream repository is public, the safest approach is to create your own private repository and copy the contents into it
+Default behavior:
 
-## Workflow Behavior
+- renewal becomes allowed `175 days` before expiration
+- the workflow checks once per week
+- once a domain enters the window, it renews automatically
 
-- Runs once per week by default
-- Uses GitHub Hosted Runners
-- Scheduled runs use UTC
-- The workflow file must stay on the default branch
-- If you regenerate the DNSHE API credentials, update the GitHub Secrets as well
+## If you regenerate the DNSHE API credentials
 
-## First Run Behavior
+Just update these GitHub Secrets:
 
-If a domain has no existing state entry:
-
-- The script reads `created_at` from the DNSHE API response
-- It derives the initial expiration as `created_at + 365 days`
-- It writes the result to `state/domains-state.json`
-
-After a successful renewal:
-
-- The script reads `new_expires_at` from the DNSHE API response
-- The previous expiration is replaced automatically
-- The next renewal window is recalculated from the new expiration time
+- `DNSHE_API_KEY`
+- `DNSHE_API_SECRET`
 
 ## Local Dry Run
 
@@ -147,14 +150,23 @@ $env:DNSHE_DOMAINS="abc88.cc.cd`n12366.cc.cd`n444.cc.cd"
 python .\scripts\dnshe_auto_renew.py --state .\state\domains-state.json --dry-run
 ```
 
-Notes:
+`--dry-run` only checks the logic. It does not renew anything and does not change the state file.
 
-- `--dry-run` only evaluates and logs the decision flow
-- It does not call the renew endpoint
-- It does not modify the state file
+## Change the schedule
 
-## Notes
+Edit the `cron` value in:
 
-- Initial expiration derivation depends on the DNSHE API returning `created_at`
-- The current implementation assumes a `365-day` validity period
-- If DNSHE changes the validity rule in the future, the derivation logic should be updated
+- `.github/workflows/dnshe-auto-renew.yml`
+
+The schedule uses UTC.
+
+## Files
+
+- `scripts/dnshe_auto_renew.py`
+- `.github/workflows/dnshe-auto-renew.yml`
+- `state/domains-state.json`
+
+## Official Docs
+
+- [DNSHE dashboard](https://my.dnshe.com)
+- [DNSHE API manual](https://my.dnshe.com/knowledgebase/1/Free-Domain-Name-Service-API-User-Manual.html)

@@ -29,8 +29,8 @@
 | `Repository name` | 你的仓库名，例如 `my-dnshe-auto-renew` |
 | `Privacy` | 选 `Private` |
 
-3. 点击 `Begin import`，等待导入完成（通常几十秒到几分钟）
-4. 导入完成后，GitHub 会生成一个属于你自己的私有仓库，后续的 Secret、Variable 和 workflow 都在这个仓库的网页里设置
+1. 点击 `Begin import`，等待导入完成（通常几十秒到几分钟）
+2. 导入完成后，GitHub 会生成一个属于你自己的私有仓库，后续的 Secret、Variable 和 workflow 都在这个仓库的网页里设置
 
 ### 第 2 步：在 GitHub 添加 2 个 Secret 和 1 个 Variable
 
@@ -146,19 +146,6 @@ abc88.cc.cd
 - `DNSHE_API_KEY`
 - `DNSHE_API_SECRET`
 
-## 本地测试
-
-如果你想先本地看一下脚本会怎么判断，可以这样跑：
-
-```powershell
-$env:DNSHE_API_KEY='your_key'
-$env:DNSHE_API_SECRET='your_secret'
-$env:DNSHE_DOMAINS="abc88.cc.cd`n12366.cc.cd`n444.cc.cd"
-python .\scripts\dnshe_auto_renew.py --state .\state\domains-state.json --dry-run
-```
-
-`--dry-run` 只做检查，不会真的续期，也不会改状态文件。
-
 ## 改自动执行时间
 
 如果你要修改执行时间，改这个文件里的 `cron`：
@@ -177,3 +164,4 @@ python .\scripts\dnshe_auto_renew.py --state .\state\domains-state.json --dry-ru
 
 - [DNSHE 后台](https://my.dnshe.com)
 - [DNSHE API 手册](https://my.dnshe.com/knowledgebase/1/Free-Domain-Name-Service-API-User-Manual.html)
+

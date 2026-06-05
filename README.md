@@ -125,6 +125,3 @@ abc88.cc.cd
 ## 许可证
 
 MIT License
-
----
-[linux.do](https://linux.do)

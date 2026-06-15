@@ -25,10 +25,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 新增：安装企业微信通知需要的依赖
-      - name: Install Python dependencies
-        run: pip install requests
-
       - name: Run renewal check
         env:
           DNSHE_API_KEY: ${{ secrets.DNSHE_API_KEY }}
@@ -56,98 +52,130 @@ jobs:
           git commit -m "chore: update DNSHE renewal state"
           git push
 
-      # 新增：企业微信通知（不管成功/失败都会发）
+      # ==== 下面是新增的通知步骤 ====
       - name: Send WeCom Notification
-        if: always()
+        if: always()  # 无论成功失败都发送通知
         env:
+          # 1. 这里填你企业微信机器人的 Webhook 地址
+          # 2. 必须要在 GitHub Secrets 里添加这个名为 WECOM_WEBHOOK 的密文
           WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
-          JOB_STATUS: ${{ job.status }}
-          GITHUB_SERVER_URL: ${{ github.server_url }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          # 没配置 webhook 就跳过，不影响原有流程
-          if [ -z "$WECOM_WEBHOOK" ]; then
-            echo "WECOM_WEBHOOK not set, skip notification."
-            exit 0
-          fi
+          # 定义 Python 脚本部分
+          PY_SCRIPT=$(cat << 'END_OF_PYTHON'
+          import os
+          import json
+          from datetime import datetime, timezone
 
-          python3 - <<'PY_SCRIPT'
-import os
-import json
-from datetime import datetime, timezone
+          # 获取环境变量
+          webhook_url = os.environ.get("WECOM_WEBHOOK")
+          job_status = os.environ.get("STATUS", "unknown") # SUCCESS, FAILURE, CANCELLED
 
-WEBHOOK = os.environ["WECOM_WEBHOOK"]
-JOB_STATUS = os.environ["JOB_STATUS"]
-RUN_URL = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+          # 读取状态文件
+          state_file = "state/domains-state.json"
+          domain_lines = []
+          
+          if os.path.exists(state_file):
+              try:
+                  with open(state_file, "r", encoding="utf-8") as f:
+                      data = json.load(f)
+                      
+                  for domain, info in data.items():
+                      # 判断是否需要重试：如果状态是 failed 且上次续期时间早于一周前，则不再重试
+                      last_attempt = info.get("last_attempt_at")
+                      if info.get("status") == "failed" and last_attempt:
+                          attempt_dt = datetime.fromisoformat(last_attempt.replace('Z', '+00:00'))
+                          if (datetime.now(timezone.utc) - attempt_dt).days > 7:
+                              domain_lines.append(f"- `{domain}` | ⏸️ **已暂停重试** (连续失败超过7天)")
+                              continue
 
-# 状态 emoji 映射
-STATUS_MAP = {
-    "success": ("✅", "正常运行"),
-    "failure": ("❌", "执行失败"),
-    "cancelled": ("⏹️", "已取消"),
-    "skipped": ("⏭️", "已跳过")
-}
-emoji, status_desc = STATUS_MAP.get(JOB_STATUS, ("❓", "未知状态"))
+                      exp_str = info.get("expires_at", "N/A")
+                      renewed_at = info.get("last_renewed_at")
+                      
+                      if exp_str and exp_str != "N/A":
+                          try:
+                              exp_dt = datetime.fromisoformat(exp_str.replace('Z', '+00:00'))
+                              now = datetime.now(timezone.utc)
+                              days_left = (exp_dt - now).days
+                              
+                              # 到期预警等级
+                              if days_left < 30:
+                                  flag = "🔴 即将过期！"
+                              elif days_left < 90:
+                                  flag = "🟡 即将进入续期窗口"
+                              else:
+                                  flag = "🟢 状态正常"
 
-# 解析 state 文件生成域名状态列表
-state_path = "state/domains-state.json"
-domain_lines = []
-if os.path.exists(state_path):
-    try:
-        with open(state_path, "r", encoding="utf-8") as f:
-            state = json.load(f)
-        for domain, info in state.items():
-            exp_str = info.get("expires_at", "")
-            renewed_at = info.get("last_renewed_at", "")
-            if exp_str:
-                try:
-                    # 兼容你脚本的日期格式 YYYY-MM-DD HH:MM
-                    exp_dt = datetime.strptime(exp_str[:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
-                    now = datetime.now(timezone.utc)
-                    days_left = (exp_dt - now).days
-                    # 到期预警等级
-                    if days_left < 30:
-                        flag = "🔴 即将过期！"
-                    elif days_left < 90:
-                        flag = "🟡 即将进入续期窗口"
-                    else:
-                        flag = "🟢 状态正常"
-                    line = f"- `{domain}` | 到期：**{exp_str}** | 剩余 **{days_left}** 天 {flag}"
-                    if renewed_at:
-                        line += f"\n  ✅ 最近续期时间：{renewed_at}"
-                    domain_lines.append(line)
-                except Exception as e:
-                    domain_lines.append(f"- `{domain}` | 到期：{exp_str} | 解析失败：{e}")
-            else:
-                domain_lines.append(f"- `{domain}` | ⚠️ 缺少到期时间信息")
-    except Exception as e:
-        domain_lines.append(f"❌ 读取状态文件失败：{e}")
-else:
-    domain_lines.append("⚠️ 未找到状态文件，可能是首次运行或脚本执行异常")
+                              line = f"- `{domain}` | 到期：**{exp_str}** | 剩余 **{days_left}** 天 {flag}"
+                              
+                              # 只有成功续期的才显示续期时间
+                              if renewed_at and info.get("status") == "success":
+                                  line += f"\n  ✅ 最近续期时间：{renewed_at}"
+                              
+                              domain_lines.append(line)
+                          except Exception as e:
+                              domain_lines.append(f"- `{domain}` | 解析错误: {e}")
+                      else:
+                          domain_lines.append(f"- `{domain}` | ⚠️ 缺少到期时间信息")
+              except Exception as e:
+                  domain_lines.append(f"❌ 读取状态文件失败：{e}")
+          else:
+              domain_lines.append("⚠️ 状态文件不存在 (首次运行可能尚未生成)")
 
-# 组装企业微信 Markdown 内容
-content = f"""## {emoji} DNSHE 自动续期任务 {status_desc}
+          # 组装 Markdown 内容
+          # 根据状态选择 Emoji
+          emoji_map = {
+              "SUCCESS": "✅",
+              "FAILURE": "❌",
+              "CANCELLED": "⛔",
+              "SKIPPED": "⏭️"
+          }
+          emoji = emoji_map.get(job_status, "❓")
+          
+          status_text = {
+              "SUCCESS": "成功",
+              "FAILURE": "失败",
+              "CANCELLED": "已取消",
+              "SKIPPED": "已跳过"
+          }.get(job_status, "未知")
+
+          content = f"""## {emoji} DNSHE 自动续期任务 {status_text}
 **运行时间**：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC
-**运行状态**：`{JOB_STATUS.upper()}`
+**运行状态**：`{job_status.upper()}`
 
 ### 📋 域名状态明细
 {chr(10).join(domain_lines) if domain_lines else '❌ 无域名数据'}
 
 ---
-🔗 [点击查看完整运行日志]({RUN_URL})
-"""
-payload = {
-    "msgtype": "markdown",
-    "markdown": {"content": content.strip()}
-}
+🔗 [点击查看完整运行日志]({os.environ.get('RUN_URL', '#')})
+          """
+          
+          # 发送请求
+          if not webhook_url:
+              print("❌ 未配置 WECOM_WEBHOOK，跳过通知")
+              exit(0)
 
-# 发送通知
-import requests
-try:
-    resp = requests.post(WEBHOOK, json=payload, timeout=10)
-    resp.raise_for_status()
-    print("✅ 企业微信通知发送成功")
-except Exception as e:
-    print(f"❌ 企业微信通知发送失败：{e}")
-PY_SCRIPT
+          payload = {
+              "msgtype": "markdown",
+              "markdown": {
+                  "content": content.strip()
+              }
+          }
+
+          try:
+              import requests
+              resp = requests.post(webhook_url, json=payload, timeout=15)
+              if resp.status_code == 200:
+                  print("✅ 企业微信通知发送成功")
+              else:
+                  print(f"❌ 企业微信通知发送失败，状态码: {resp.status_code}, 响应: {resp.text}")
+          except Exception as e:
+              print(f"❌ 发送通知时发生异常: {e}")
+          END_OF_PYTHON
+          )
+          
+          # 执行 Python 脚本
+          python3 -c "$PY_SCRIPT"
+        env:
+          # 将 GitHub Context 传递给 Python 脚本
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -25,6 +25,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      # 新增：安装企业微信通知需要的依赖
+      - name: Install Python dependencies
+        run: pip install requests
+
       - name: Run renewal check
         env:
           DNSHE_API_KEY: ${{ secrets.DNSHE_API_KEY }}
@@ -51,3 +55,99 @@ jobs:
           
           git commit -m "chore: update DNSHE renewal state"
           git push
+
+      # 新增：企业微信通知（不管成功/失败都会发）
+      - name: Send WeCom Notification
+        if: always()
+        env:
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          JOB_STATUS: ${{ job.status }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          # 没配置 webhook 就跳过，不影响原有流程
+          if [ -z "$WECOM_WEBHOOK" ]; then
+            echo "WECOM_WEBHOOK not set, skip notification."
+            exit 0
+          fi
+
+          python3 - <<'PY_SCRIPT'
+import os
+import json
+from datetime import datetime, timezone
+
+WEBHOOK = os.environ["WECOM_WEBHOOK"]
+JOB_STATUS = os.environ["JOB_STATUS"]
+RUN_URL = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+# 状态 emoji 映射
+STATUS_MAP = {
+    "success": ("✅", "正常运行"),
+    "failure": ("❌", "执行失败"),
+    "cancelled": ("⏹️", "已取消"),
+    "skipped": ("⏭️", "已跳过")
+}
+emoji, status_desc = STATUS_MAP.get(JOB_STATUS, ("❓", "未知状态"))
+
+# 解析 state 文件生成域名状态列表
+state_path = "state/domains-state.json"
+domain_lines = []
+if os.path.exists(state_path):
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        for domain, info in state.items():
+            exp_str = info.get("expires_at", "")
+            renewed_at = info.get("last_renewed_at", "")
+            if exp_str:
+                try:
+                    # 兼容你脚本的日期格式 YYYY-MM-DD HH:MM
+                    exp_dt = datetime.strptime(exp_str[:16], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+                    now = datetime.now(timezone.utc)
+                    days_left = (exp_dt - now).days
+                    # 到期预警等级
+                    if days_left < 30:
+                        flag = "🔴 即将过期！"
+                    elif days_left < 90:
+                        flag = "🟡 即将进入续期窗口"
+                    else:
+                        flag = "🟢 状态正常"
+                    line = f"- `{domain}` | 到期：**{exp_str}** | 剩余 **{days_left}** 天 {flag}"
+                    if renewed_at:
+                        line += f"\n  ✅ 最近续期时间：{renewed_at}"
+                    domain_lines.append(line)
+                except Exception as e:
+                    domain_lines.append(f"- `{domain}` | 到期：{exp_str} | 解析失败：{e}")
+            else:
+                domain_lines.append(f"- `{domain}` | ⚠️ 缺少到期时间信息")
+    except Exception as e:
+        domain_lines.append(f"❌ 读取状态文件失败：{e}")
+else:
+    domain_lines.append("⚠️ 未找到状态文件，可能是首次运行或脚本执行异常")
+
+# 组装企业微信 Markdown 内容
+content = f"""## {emoji} DNSHE 自动续期任务 {status_desc}
+**运行时间**：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC
+**运行状态**：`{JOB_STATUS.upper()}`
+
+### 📋 域名状态明细
+{chr(10).join(domain_lines) if domain_lines else '❌ 无域名数据'}
+
+---
+🔗 [点击查看完整运行日志]({RUN_URL})
+"""
+payload = {
+    "msgtype": "markdown",
+    "markdown": {"content": content.strip()}
+}
+
+# 发送通知
+import requests
+try:
+    resp = requests.post(WEBHOOK, json=payload, timeout=10)
+    resp.raise_for_status()
+    print("✅ 企业微信通知发送成功")
+except Exception as e:
+    print(f"❌ 企业微信通知发送失败：{e}")
+PY_SCRIPT

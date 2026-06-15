@@ -35,12 +35,19 @@ jobs:
 
       - name: Commit updated renewal state
         run: |
-          if git diff --quiet -- state/domains-state.json; then
+
+          # 配置 git 身份
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 先把文件加入暂存区（不管是不是新文件，add 都不会报错）
+          git add state/domains-state.json
+          
+          # 检测「暂存区和 HEAD 的差异」：不管是新文件还是已跟踪文件的修改，都能检测到
+          #if git diff --quiet -- state/domains-state.json; then
+          if git diff --cached --quiet; then
             echo "No state changes to commit."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state/domains-state.json
+          
           git commit -m "chore: update DNSHE renewal state"
           git push

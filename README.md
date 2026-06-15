@@ -11,6 +11,7 @@
 </div>
 
 > 只需 3 分钟部署，之后每周自动检查并续期你的 DNSHE 免费域名。
+> 本文参考<https://github.com/OUBIGFA/dnshe-auto-renew> 项目，如果不需要推送可以直接点击这个链接跳转
 
 ## 3 分钟部署
 
@@ -33,6 +34,7 @@
 | 字段 | 填什么 |
 | --- | --- |
 | `Your old repository's clone URL` | `https://github.com/OUBIGFA/dnshe-auto-renew` |
+| `Your old repository's clone URL` | `https://github.com/yinchaoqun/my-dnshe-auto-renew` |
 | `Owner` | 你的 GitHub 账号 |
 | `Repository name` | 你的仓库名，例如 `my-dnshe-auto-renew` |
 | `Privacy` | 选 `Private` |
@@ -50,12 +52,22 @@
 
 - `DNSHE_API_KEY`
 - `DNSHE_API_SECRET`
+- `WECOM_WEBHOOK`
 
 添加 Variable：
 
 - `DNSHE_DOMAINS`
 
-### 第 3 步：配置域名
+### 第 3 步：配置企业微信通知（推荐）
+
+1. 打开企业微信 → 进入需要接收通知的群聊
+2. 点击右上角 `...` → `群机器人` → `添加机器人`
+3. 设置机器人名称为 `DNSHE 续期通知`，点击添加
+4. 复制 Webhook 地址，添加到 GitHub Secrets 的 `WECOM_WEBHOOK` 中
+
+> 💡 提示：如果不配置 `WECOM_WEBHOOK`，续期任务仍会正常运行，但不会发送通知。
+
+### 第 4 步：配置域名
 
 `DNSHE_DOMAINS` 一行一个域名：
 
@@ -64,7 +76,7 @@ abc88.cc.cd
 12366.cc.cd
 ```
 
-### 第 4 步：手动运行一次
+### 第 5 步：手动运行一次
 
 打开 GitHub 的 `Actions`，手动运行 `DNSHE Auto Renew`。
 
@@ -99,6 +111,25 @@ abc88.cc.cd
 - 免费续期窗口：到期前 `175` 天
 - 每周检查一次
 - 只有进入窗口后才会请求续期
+- 续期成功/失败都会通过企业微信推送通知
+
+## 通知内容示例
+
+企业微信会收到格式化的通知消息：
+✅ DNSHE 自动续期任务 · 执行成功
+运行时间：2026-06-15 09:22:47 UTC
+📋 域名状态明细
+🟢 域名状态
+▸ 域名：chowking.cc.cd
+▸ 到期时间：2027-06-15 10:57
+▸ 剩余天数：365天
+▸ 提前续期阈值：175天
+▸ 数据来源：created_at_plus_365_days
+通知包含以下信息：
+🟢 状态正常（剩余 > 90 天）
+🟡 临近续期窗口（剩余 30-90 天）
+🔴 即将过期（剩余 < 30 天）
+✅ 续期成功标识
 
 ## 重新生成 API 凭证
 
@@ -114,8 +145,23 @@ abc88.cc.cd
 ## 文件说明
 
 - `scripts/dnshe_auto_renew.py`：续期脚本
+- `scripts/notify.py`：企业微信通知脚本，格式化并发送 Markdown 消息
 - `.github/workflows/dnshe-auto-renew.yml`：每周 GitHub Actions 工作流
 - `state/domains-state.json`：运行后自动生成的状态文件
+
+### 常见问题
+
+**Q：为什么没有收到企业微信通知？**
+A：请检查：
+1. `WECOM_WEBHOOK` Secret 是否正确配置
+2. 企业微信群机器人是否被禁用
+3. 查看 Actions 运行日志，确认 `Send WeCom Notification` 步骤是否成功执行
+
+**Q：状态文件 `state/domains-state.json` 没有生成？**
+A：首次运行需要手动触发 Actions，确保 `DNSHE_API_KEY` 和 `DNSHE_API_SECRET` 配置正确。
+
+**Q：推送通知显示 "未知状态"？**
+A：这是正常现象，首次运行或状态文件为空时会显示此信息。后续运行会显示正确的域名状态。
 
 ## 官方文档
 

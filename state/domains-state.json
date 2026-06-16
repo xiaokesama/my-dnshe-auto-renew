@@ -1,7 +1,7 @@
 {
   "domains": {
-    "chowking.cc.cd": {
-      "expires_at": "2027-06-15 10:57",
+    "xiaoke119.cc.cd": {
+      "expires_at": "2027-06-15 12:04",
       "renew_before_days": 175,
       "source": "created_at_plus_365_days"
     }

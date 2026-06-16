@@ -33,7 +33,7 @@
 | `Repository name` | 你即将新建仓库的仓库名，推荐: `my-dnshe-auto-renew` |
 
 3. 点击 `Begin import`，等待导入完成（通常几十秒到几分钟）
-4. 导入完成后，GitHub 会生成一个属于你自己的私有仓库
+4. 导入完成后，GitHub 会生成一个属于你自己的仓库
 
 ### 第 2 步：添加 GitHub Secrets 和 Variable
 

@@ -21,7 +21,7 @@
 2. 点击【免费域名  -> API 管理  -> 创建API密钥】
 3. 输入密钥名称，点击【创建】，获取到`DNSHE_API_KEY`和`DNSHE_API_SECRET`，后面的步骤会使用到这两个值。
 
-### 第 1 步：用 GitHub Importer 转成私有仓库
+### 第 1 步：用 GitHub Importer 将目标仓库转成自己的仓库
 
 1. 使用自己的账号登录 GitHub
 2. 新开一个浏览器页面访问 [https://github.com/new/import](https://github.com/new/import)

@@ -11,7 +11,6 @@
 </div>
 
 > 只需 3 分钟部署，之后每周自动检查并续期你的 DNSHE 免费域名。
-> 本文参考[https://github.com/OUBIGFA/dnshe-auto-renew](https://github.com/OUBIGFA/dnshe-auto-renew) 项目，如果不需要推送可以直接点击这个链接跳转
 
 ## 3 分钟部署
 
